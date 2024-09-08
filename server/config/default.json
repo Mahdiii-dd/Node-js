@@ -1,0 +1,5 @@
+{
+    "Level": "test",
+    "PORT": 3000,
+    "MONGOURI": "mongodb://127.0.0.1:27017/pa-db-test"
+}
