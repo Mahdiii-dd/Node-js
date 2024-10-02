@@ -4,7 +4,7 @@ const _ = require('lodash');
 const {mongoose} = require('./../db/mongoose');
 let jwt = require('jsonwebtoken');
 const config = require("config");
-
+const { info } = require('winston');
 const tokenOptions = {
     type: String,
     required: true
@@ -33,8 +33,43 @@ let UserSchema = new mongoose.Schema({
         required: true
     },
     tokens: [{
+        _id: false,
         access: tokenOptions,
         token: tokenOptions
+    }],
+    payments: [{
+        _id: {
+            type: mongoose.Schema.Types.ObjectId,
+            auto: true
+        },
+        info: {
+            type: String,
+            required: true,
+            trim: true
+        },
+        amount: {
+            type: Number,
+            required: true
+        },
+        date: {
+            type: String,
+            required: true
+        }
+    }],
+    receive:[{
+        info:{
+            type: String,
+            required: true,
+            trim: true
+        },
+        amount: {
+            type: Number,
+            required: true
+        },
+        date: {
+            type: String,
+            required: true
+        }
     }]
 });
 UserSchema.methods.toJSON = function () {
@@ -54,7 +89,7 @@ UserSchema.statics.findByCredentials = function (email, password) {
         if (!user){
             return Promise.reject();
         }
-        return new Promise((resolve, reject)=>{
+        return new Promise ((resolve, reject)=>{
             bcrypt.compare(password, user.password,(err, res)=>{
                 if(res){
                     resolve(user);
@@ -66,8 +101,37 @@ UserSchema.statics.findByCredentials = function (email, password) {
     });
 }
 
+UserSchema.statics.findByToken = function (token) {
+    let User = this;
+    let decoded;
 
-UserSchema.methods.generateAuthToken = function () {
+    try {
+        decoded = jwt.verify(token, config.get('JWT_SECRET'));
+    } catch (error) {
+        return Promise.reject();
+    }
+
+
+    return User.findOne({
+        _id: decoded._id,
+        'tokens.token': token,
+        'tokens.access': 'auth'
+    });
+}
+
+UserSchema.methods.removeToken = function (token) {
+    let user = this;
+
+    return user.update({
+        $pull: {
+            tokens: {
+                token
+            }
+        }
+    });
+}
+
+UserSchema.methods.generateAuthToken = async function () {
     let user = this;
     let access = 'auth';
 
@@ -76,13 +140,19 @@ UserSchema.methods.generateAuthToken = function () {
         access
     },config.get('JWT_SECRET')).toString();
 
+    user.tokens = user.tokens || [];
     user.tokens.push({
         access,
         token
     });
-    return user.save().then(()=>{
+
+    try {
+        await user.save();
         return token;
-    })
+    } catch (error) {
+        throw new Error('Error while saving token'); // مدیریت خطا
+    }
+    
 };
 UserSchema.pre('save', function (next){
     let user = this;
